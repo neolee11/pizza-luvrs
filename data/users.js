@@ -1,49 +1,57 @@
 'use strict';
 
 const bcrypt = require('bcrypt-nodejs'),
-  Boom = require('boom'),
-  User = require('../models/user');
+    Boom = require('boom'),
+    User = require('../models/user'),
+    DynamoStore = require('./dynamoStore');
 
-const users = {},
-  saltRounds = 10;
+const saltRounds = 10;
 
-function createUser (username, passwordString, callback) {
-  if (users[username]) {
-    throw Boom.conflict('Username already exists');
-  }
-  hashPassword(passwordString, (err, passwordHash) => {
-    let user = new User(username, passwordHash);
-    users[username] = user;
-    callback(null, user);
-  });
-};
+function createUser(username, passwordString, callback) {
 
-function getUser (username, callback) {
-  callback(null, users[username]);
-};
-
-function authenticateUser (username, passwordString, callback) {
-  getUser(username, (err, user) => {
-    if (err || !user) callback('User not found');
-    else validatePassword(passwordString, user.passwordHash, (err, res) => {
-      callback(err, res, res ? user : null);
+    hashPassword(passwordString, (err, passwordHash) => {
+        let user = new User(username, passwordHash);
+        console.log(user);
+        DynamoStore.putItem('users', user, (err, data) => {
+           callback(null, user);
+        });
     });
-  });
 };
 
-function validatePassword (passwordString, passwordHash, callback) {
-  bcrypt.compare(passwordString, passwordHash, (err, res) => {
-    callback(err, res);
-  });
+function getUser(username, callback) {
+    DynamoStore.getItem('users', 'username', username, (err, data) => {
+        console.log(data);
+        callback(null, dynamoItemToUser(data.Item));
+    });
+};
+
+function authenticateUser(username, passwordString, callback) {
+    getUser(username, (err, user) => {
+        if (err || !user) callback('User not found');
+        else validatePassword(passwordString, user.passwordHash, (err, res) => {
+            callback(err, res, res ? user : null);
+        });
+    });
+};
+
+function validatePassword(passwordString, passwordHash, callback) {
+    bcrypt.compare(passwordString, passwordHash, (err, res) => {
+        callback(err, res);
+    });
 }
 
-function hashPassword (passwordString, callback) {
-  bcrypt.genSalt(saltRounds, (err, salt) => {
-    if (err) callback(err);
-    else bcrypt.hash(passwordString, salt, null, (err, hash) => {
-      callback(err, hash);
+function hashPassword(passwordString, callback) {
+    bcrypt.genSalt(saltRounds, (err, salt) => {
+        if (err) callback(err);
+        else bcrypt.hash(passwordString, salt, null, (err, hash) => {
+            callback(err, hash);
+        });
     });
-  });
+}
+
+function dynamoItemToUser(item) {
+    console.log(item);
+    return new User(item.username.S, item.passwordHash.S)
 }
 
 module.exports.createUser = createUser;
